@@ -9,7 +9,7 @@
 - 11/23 하네스 장면의 발표 덱 화면을 실제 발명연수 덱 캡처 3장(8·27·40장, 사람·이름 없는 장)으로 채움 → `img/deck-1~3.jpg`, 화면 표시는 "실제 결과물 캡처".
 - 11/23 재현 화면을 기본 크게(흐름 칸 가운데) + 제목줄 "작게/크게" 버튼(선택은 localStorage `nervScrSmall`). 안쪽은 520×306 기준으로 그리고 zoom으로 키움. 투어 글자 전체 약 1.15배.
 - 11/24 하네스 장면은 말 한 번 치고 바로 하네스 안(7단계)+덱 화면. "건너뛰고 전체 보기"·마지막 "전체 보기" 뺌 → 마지막 단추는 "처음으로". 숫자 화면은 위쪽 "전체 숫자 보기"로만.
-- 다음: 더 다듬어서 스레드에 올리기 (사용자 11/24). 글은 사용자가 쓴다. 자막·재현 화면 검토도 남음. 11/24 공개 저장소 `skyang9838-hue/nerv-flow` + GitHub Pages 배포 https://skyang9838-hue.github.io/nerv-flow/ (main push = 배포). 사용자가 더 고칠 게 있다고 함.
+- 다음: **스레드용 영상 만들기** (사용자 11/24 결정, 아직 시작 안 함): 가로 16:9 그대로 · "제일 있어 보이는 것만 짧게"(하네스 장면 중심, 끝에 "한 바퀴"를 붙일지는 미정) · 효과음 넣기. 방법 안: Playwright로 CDP 스크린캐스트 프레임(1920×1080 JPEG) + AudioNode.connect를 가로채 MediaStreamDestination→MediaRecorder로 효과음 녹음 → ffmpeg로 합쳐 mp4. 글은 사용자가 쓴다. 자막·재현 화면 검토도 남음. 11/24 공개 저장소 `skyang9838-hue/nerv-flow` + GitHub Pages 배포 https://skyang9838-hue.github.io/nerv-flow/ (main push = 배포). 사용자가 더 고칠 게 있다고 함.
 - 숫자는 노트북(DESKTOP-C59M8JA) 기록만: 집 컴·학교컴에서 `세기.bat` → `기록\<컴이름>.json`이 더해짐. 새 컴 이름은 HTML `HOSTNAME`에 별명 추가.
 
 **주의**
