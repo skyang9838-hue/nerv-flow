@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const [pwDir, outDir] = process.argv.slice(2);
 const require = createRequire(path.join(pwDir, 'x.js'));
 const { chromium } = require('playwright');
+const SCALE = Number(process.env.SCALE || 1.5);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const url = pathToFileURL(path.join(here, '..', 'index.html')).href;
 
@@ -17,18 +18,25 @@ fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(outDir, 'frames'), { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
-const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-await ctx.addInitScript(() => {
+// 확대해도 글자가 안 흐리게 크게 찍음 (기본 1.5배 = 2880×1620, 초당 약 59장. 2배는 29장이라 끊김): 창을 키우고 html{zoom}으로 1920 배치를 그대로 키움
+// (기기 배율 deviceScaleFactor는 스크린캐스트가 무시해서 못 씀)
+const ctx = await browser.newContext({ viewport: { width: 1920 * SCALE, height: 1080 * SCALE } });
+await ctx.addInitScript(z => {
+  if (z !== 1) new MutationObserver((l, o) => {
+    if (!document.head) return;
+    const s = document.createElement('style'); s.textContent = `html{zoom:${z}}`;
+    document.head.appendChild(s); o.disconnect();
+  }).observe(document, { childList: true, subtree: true });
   // 마우스 커서 + 누를 때 동그라미
   addEventListener('DOMContentLoaded', () => {
     const st = document.createElement('style');
-    st.textContent = `#__cur{position:fixed;left:0;top:0;width:34px;height:34px;pointer-events:none;z-index:2147483647;transform:translate(-200px,-200px);filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+    st.textContent = `#__cur{position:fixed;left:0;top:0;width:28px;height:28px;pointer-events:none;z-index:2147483647;transform:translate(-200px,-200px);filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
       .__rip{position:fixed;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;border:3px solid rgba(255,140,50,.95);pointer-events:none;z-index:2147483646;animation:__r .55s ease-out forwards}
       @keyframes __r{to{transform:scale(4.2);opacity:0}}`;
     document.head.appendChild(st);
     const c = document.createElement('div');
     c.id = '__cur';
-    c.innerHTML = '<svg viewBox="0 0 24 24" width="34" height="34"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+    c.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>';
     document.body.appendChild(c);
     addEventListener('mousemove', e => { c.style.transform = `translate(${e.clientX - 4}px,${e.clientY - 3}px)`; }, true);
     addEventListener('mousedown', e => {
@@ -37,7 +45,7 @@ await ctx.addInitScript(() => {
       document.body.appendChild(r); setTimeout(() => r.remove(), 700);
     }, true);
   });
-});
+}, SCALE);
 
 const page = await ctx.newPage();
 await page.goto(url);
@@ -49,7 +57,7 @@ await page.evaluate(() => {
   window.click = (vol = .3, rate = 1) => { if (soundOn) __ev.push({ k: 'c', vol, rate, t: Date.now() }); return c0(vol, rate); };
   window.tick = (freq = 660, vol = .06) => { if (soundOn) __ev.push({ k: 't', freq, vol, t: Date.now() }); return t0(freq, vol); };
 });
-await page.mouse.move(1150, 760);
+await page.mouse.move(1150 * SCALE, 760 * SCALE);
 
 const cdp = await ctx.newCDPSession(page);
 const frames = [];
@@ -60,7 +68,7 @@ cdp.on('Page.screencastFrame', async f => {
   frames.push({ file, t: f.metadata.timestamp });
   cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {});
 });
-await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
+await cdp.send('Page.startScreencast', { format: 'jpeg', quality: Number(process.env.JPEG_Q || 80), maxWidth: 1920 * SCALE, maxHeight: 1080 * SCALE, everyNthFrame: 1 });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function glideClick(sel) {
@@ -78,6 +86,23 @@ await glideClick('#chList .chb:nth-child(3)');          // 이 글로 발표 덱
 await sleep(450);
 await page.evaluate(() => { const c = document.getElementById('__cur'); c.style.transition = 'opacity .4s'; c.style.opacity = 0; }); // 다 누르면 커서 숨김
 const tClick = Date.now() / 1000;
+await page.waitForSelector('#hzg', { timeout: 30000 });   // 하네스 단계 그림이 생긴 때
+const tHarness = Date.now() / 1000;
+await page.waitForSelector('.scr', { timeout: 60000 });   // 덱 화면이 뜬 때
+const tDeck = Date.now() / 1000;
+// 카메라용 위치 (1920×1080 기준 CSS px): 제목, 하네스 단계 제목·칸, 덱 창
+const rects = await page.evaluate(z => {
+  const R = e => { const r = e.getBoundingClientRect(); return [r.left / z, r.top / z, r.right / z, r.bottom / z].map(v => Math.round(v)); };
+  // zoom 아래 getBoundingClientRect가 이미 1920 기준이면 z로 나누지 않음
+  const k = document.documentElement.getBoundingClientRect().width > 1921 ? 1 : 1 / z;
+  const Rk = e => R(e).map(v => Math.round(v * k * z / z));
+  return {
+    k, title: Rk(document.getElementById('ch')),
+    steps: [...document.querySelectorAll('#hzg .hzt')].map(Rk),
+    boxes: [...document.querySelectorAll('#hzg .hzb rect')].map(Rk),
+    deck: Rk(document.querySelector('.scr')),
+  };
+}, SCALE);
 await page.waitForFunction(() => document.querySelector('#tnext')?.classList.contains('pulse'), null, { timeout: 90000 });
 const tDone = Date.now() / 1000;
 await sleep(Number(process.env.HOLD_MS || 9000));        // 덱 화면에서 머물기
@@ -117,7 +142,7 @@ const audio = await page.evaluate(async ({ tStart, tEnd }) => {
   for (let i = 0; i < ch.length; i++) pcm.setInt16(44 + i * 2, Math.max(-1, Math.min(1, ch[i])) * 0x7fff, true);
   const u = new Uint8Array(pcm.buffer); let s = '';
   for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
-  return { b64: btoa(s), events: n };
+  return { b64: btoa(s), events: n, ticks: window.__ev.filter(e => e.k === 't').map(e => e.t / 1000) };
 }, { tStart, tEnd });
 fs.writeFileSync(path.join(outDir, 'audio.wav'), Buffer.from(audio.b64, 'base64'));
 
@@ -132,7 +157,7 @@ for (let i = 0; i < fr.length; i++) {
 }
 txt += `file 'frames/${fr[fr.length - 1].file}'\n`;
 fs.writeFileSync(path.join(outDir, 'frames.txt'), txt);
-const meta = { tStart, tClick, tDone, tEnd, soundEvents: audio.events, frames: fr.length };
+const meta = { scale: SCALE, rects, tStart, tClick, tHarness, tDeck, tDone, tEnd, ticks: audio.ticks, soundEvents: audio.events, frames: fr.length };
 fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2));
 console.log(JSON.stringify(meta));
 await browser.close();
